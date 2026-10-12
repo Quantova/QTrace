@@ -1,0 +1,61 @@
+{
+  "name": "@quantovainc/qtrace",
+  "version": "0.1.0",
+  "description": "Post quantum content provenance for AI. Attests, under a producer key the model owner authorised, which registered model a document, image or answer came from and when, with ML-DSA-65 under FIPS 204, SHA3 fingerprints and Quantova time proofs.",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "qtrace": "bin/qtrace.js"
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "lib/",
+    "bin/",
+    "wasm/qtrace_native.js",
+    "wasm/qtrace_native_bg.wasm",
+    "wasm/qtrace_native.d.ts",
+    "LICENSE-APACHE",
+    "LICENSE-MIT",
+    "NOTICE",
+    "AUTHORS"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@quantovainc/qstamp": "0.1.5"
+  },
+  "keywords": [
+    "post-quantum",
+    "quantum-safe",
+    "content-provenance",
+    "ai-provenance",
+    "c2pa",
+    "ai-agents",
+    "model-registry",
+    "ml-dsa",
+    "fips-204",
+    "quantova"
+  ],
+  "license": "Apache-2.0 OR MIT",
+  "author": "Quantova Inc",
+  "homepage": "https://github.com/Quantova/QTrace",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Quantova/QTrace.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Quantova/QTrace/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
