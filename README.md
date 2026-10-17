@@ -64,19 +64,19 @@ When an envelope is anchored, only a 32 byte Qstamp commitment reaches the chain
 1. The envelope is well formed, it is the type of envelope the verifier expects, and its signer identifier matches its public key and the owner or producer it names.
 2. A registration is signed by the expected model owner. A manifest is signed by the expected producer, or, when only the model owner is expected, by a producer that owner authorised.
 3. When the content is supplied, its SHA3-256 fingerprint equals the one in the manifest.
-4. When the manifest names a model, the supplied registration is exactly the one referenced, it is signed by the expected model owner, that owner authorised the producer, and the output is not dated before the registration. When the verifier expects a model, a manifest that names none is invalid. When the model artefact is supplied, its fingerprint equals the registered one.
+4. When the manifest names a model, the supplied registration is exactly the one referenced, it is signed by the expected model owner, that owner authorised the producer, no withdrawal of that producer by the owner was anchored before the output, and the output is not dated before the registration. When the verifier expects a model, a manifest that names none is invalid. When the model artefact is supplied, its fingerprint equals the registered one.
 5. When the prompt and its salt are supplied, they reproduce the committed value.
 6. When a C2PA manifest store is supplied, its fingerprint equals the one in the manifest.
 7. Every source the manifest names is supplied as a validly signed output with the referenced identity and is not dated after the output that uses it, and its anchor is verified when anchors are required. Sources supplied for a manifest that names none make the result invalid.
-8. Each anchor is verified under the record kind for its envelope type with a SHA3 digest, and the claimed time is not later than the anchor time, allowing five minutes for clock difference. No envelope may be dated after the time of verification.
+8. Each anchor is verified under the record kind for its envelope type, the model kind for a withdrawal, with a SHA3 digest, and the claimed time is not later than the anchor time, allowing five minutes for clock difference. No envelope may be dated after the time of verification.
 
-A result is valid only when the expected producer or owner is given, the content is supplied, the named model and its expected owner are supplied, every source is supplied and every envelope is anchored. When any of these is missing the result is indeterminate rather than valid, so a gap in the evidence can never be mistaken for proof. A verifier may accept unanchored envelopes explicitly when it needs to.
+A result is valid only when the expected producer or owner is given, the content is supplied, the named model and its expected owner are supplied, the withdrawals held for its producer are supplied, every source is supplied and every envelope is anchored. When any of these is missing the result is indeterminate rather than valid, so a gap in the evidence can never be mistaken for proof. A verifier may accept unanchored envelopes explicitly when it needs to.
 
 ## Trust model of this release
 
-This release targets the Quantova test network. Anchors on that network carry no evidential weight. The signing module is compiled from the Quantova Q-Crypto library, which follows FIPS 204 and FIPS 202 and has been tested against the NIST vectors and cross checked against an independent implementation, but has not yet been independently audited or validated under FIPS 140-3.
+This release anchors on the live Quantova network Q-test-net-1. The signing module is compiled from the Quantova Q-Crypto library, which follows FIPS 204 and FIPS 202 and has been tested against the NIST vectors and cross checked against an independent implementation. It has not been validated under FIPS 140-3. Anchor times are confirmed by the endpoints a verifier queries, so a time is only as reliable as those endpoints. Verification names the endpoints it consulted and says whether they are the official endpoints of the network, and a verifier who needs independence from any single operator should query several independent endpoints.
 
-An output manifest is the signed statement of its producer. QTrace proves who made that statement, that the model owner authorised the producer to make it, that the content matches and when the statement was recorded. It does not prove that the named model computed the content, because no signature can observe a computation, and it does not detect content that was never attested. Matching a key to an accountable organisation is a matter for that organisation, for example through a published key description. A model owner withdraws a producer by registering a new version of the model without it, and verifiers should use the registration they trust. Text fields accept only visible characters in Unicode normal form C.
+An output manifest is the signed statement of its producer. QTrace proves who made that statement, that the model owner authorised the producer to make it, that the content matches and when the statement was recorded. It does not prove that the named model computed the content, because no signature can observe a computation, and it does not detect content that was never attested. Matching a key to an accountable organisation is a matter for that organisation, for example through a published key description. A model owner withdraws a producer with a withdrawal, a statement signed by the owner that names the model and the producer key and is anchored at once. An output anchored after the withdrawal is invalid, an output anchored before it stays valid, and a verifier must supply the withdrawals it holds, an empty list when it holds none. Text fields accept only visible characters in Unicode normal form C.
 
 QTrace uses the action names of the C2PA specification and the digital source types of the IPTC vocabulary, and can export a C2PA actions assertion. It does not produce a signed C2PA manifest, because the C2PA specification currently lists only classical signature algorithms. It anchors the fingerprint of an existing C2PA manifest store instead, so a classical credential gains a post quantum time proof. The c2paActions function returns only the standard assertion, and it refuses an output envelope whose signature does not verify.
 
@@ -102,11 +102,13 @@ qtrace anchor model.json --seed-file account.key
 qtrace attest --key service.key --content image.png --media-type image/png --model model.json --input-file prompt.txt --input-salt-out prompt.salt --out image.qtrace.json
 qtrace anchor image.qtrace.json --seed-file account.key
 
-qtrace verify image.qtrace.json --producer service.pub.json --content image.png --model model.json --model-owner owner.pub.json
+qtrace verify image.qtrace.json --producer service.pub.json --content image.png --model model.json --model-owner owner.pub.json --no-withdrawals
+qtrace withdraw --key owner.key --model model.json --producer service.pub.json --out service.withdrawal.json
+qtrace anchor service.withdrawal.json --seed-file account.key
 qtrace c2pa --action created --source-type trainedAlgorithmicMedia --model model.json > c2pa-actions.json
 ```
 
-Content and model files are hashed as they are read, so files up to 64 GiB are supported and never leave the machine, and symbolic links such as model caches are followed for these public files. The prompt salt is written in its own qtrace-salt/1 format to a new file readable only by its owner and is never replaced, and no output may share a path with any input or with another output. Models and outputs are anchored in separate batches. If an anchor is interrupted after its transaction was sent, the pending stamp is saved beside the first envelope and the complete command finishes it without paying again. The command exits with status 0 when the result is valid, 1 when it is invalid, refused or the evidence is malformed, 2 when it cannot be decided, and 64 for usage errors, including a path that cannot be opened. Key and salt files must be readable only by their owner and are never followed through symbolic links.
+Content and model files are hashed as they are read, so files up to 64 GiB are supported and never leave the machine, and symbolic links such as model caches are followed for these public files. The prompt salt is written in its own qtrace-salt/1 format to a new file readable only by its owner and is never replaced, and no output may share a path with any input or with another output. Models, outputs and withdrawals are anchored in separate batches. If an anchor is interrupted after its transaction was sent, the pending stamp is saved beside the first envelope and the complete command finishes it without paying again. The command exits with status 0 when the result is valid, 1 when it is invalid, refused or the evidence is malformed, 2 when it cannot be decided, and 64 for usage errors, including a path that cannot be opened. Key and salt files must be readable only by their owner and are never followed through symbolic links.
 
 ## Programmatic use
 
@@ -120,7 +122,7 @@ const output = qtrace.attest({ key: serviceKey, content: imageBytes, mediaType: 
 
 const [anchored] = await qtrace.anchor(output, { seed: accountSeed, index: 0, network: 'testnet' });
 
-const result = await qtrace.verify(anchored, { producerKeyId, content: imageBytes, model: anchoredModel, modelOwnerKeyId });
+const result = await qtrace.verify(anchored, { producerKeyId, content: imageBytes, model: anchoredModel, modelOwnerKeyId, withdrawals: [] });
 ```
 
 ## Independent verification procedure
@@ -134,7 +136,7 @@ const result = await qtrace.verify(anchored, { producerKeyId, content: imageByte
 
 ## Network
 
-The Quantova test network is named Q-test-net-1 with genesis hash ca91e093bb8de33e90db52d7c89876597d14760703793ea7211929e73e613062. Anchors are recorded by the official Qstamp contract on that network. The public endpoint is https://rpc-testnet.quantova.org.
+The live Quantova network is named Q-test-net-1 with genesis hash ca91e093bb8de33e90db52d7c89876597d14760703793ea7211929e73e613062. Anchors are recorded by the official Qstamp contract on that network. The public endpoint is https://rpc-testnet.quantova.org.
 
 ## Licence
 

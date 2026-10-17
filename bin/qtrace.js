@@ -19,6 +19,7 @@ const HELP = `qtrace, post quantum content provenance for AI with Quantova time 
   qtrace key <keyfile>
   qtrace register-model --key <owner keyfile> --name TEXT [--version TEXT] (--model-file FILE | --model-digest HEX)
                         [--card-file FILE | --card-digest HEX] [--producer KEY]... [--note TEXT] --out FILE
+  qtrace withdraw --key <owner keyfile> --model FILE --producer KEY [--note TEXT] --out FILE
   qtrace attest --key <producer keyfile> (--content FILE | --content-digest HEX --content-size N) --media-type TYPE
                 [--action ACTION] [--source-type TYPE] [--model FILE] [--input-file FILE --input-salt-out FILE]
                 [--ingredient FILE]... [--c2pa-file FILE] [--note TEXT] --out FILE
@@ -26,13 +27,15 @@ const HELP = `qtrace, post quantum content provenance for AI with Quantova time 
   qtrace complete <envelope>... --pending FILE [--tx ID] [--rpc URL]
   qtrace verify <envelope> (--producer KEY | --owner KEY) [--content FILE | --content-digest HEX]
                 [--model FILE --model-owner KEY] [--input-file FILE --input-salt-file FILE] [--c2pa-file FILE]
-                [--ingredient FILE]... [--artefact FILE] [--allow-unanchored] [--at TIME] [--rpc URL] [--json]
+                [--ingredient FILE]... [--withdrawal FILE... | --no-withdrawals] [--artefact FILE] [--allow-unanchored]
+                [--at TIME] [--rpc URL] [--json]
   qtrace c2pa (<output envelope> | --action ACTION --source-type TYPE [--when TIME]) [--model FILE]
 
 A KEY is a 64 hex character key id or a qtrace-key/1 file written by the key command. Content and model files
 are hashed with SHA3-256 as they are read and never leave this machine. Models and outputs are anchored in
-separate batches. If an anchor is interrupted after its transaction was sent, the pending stamp is kept
-beside the first envelope and complete finishes it.
+separate batches, and a model owner withdraws a producer with a withdrawal anchored in its own batch. If an
+anchor is interrupted after its transaction was sent, the pending stamp is kept beside the first envelope and
+complete finishes it.
 
 Exit codes are 0 for valid, 1 for invalid or an error, 2 for indeterminate and 64 for usage errors.`;
 
@@ -46,10 +49,11 @@ const SPEC = {
   keygen: { flags: ['force'], values: [] },
   key: { flags: [], values: [] },
   'register-model': { flags: ['force'], values: ['key', 'name', 'version', 'model-file', 'model-digest', 'card-file', 'card-digest', 'note', 'out'], multi: ['producer'] },
+  withdraw: { flags: ['force'], values: ['key', 'model', 'producer', 'note', 'out'] },
   attest: { flags: ['force'], values: ['key', 'content', 'content-digest', 'content-size', 'media-type', 'action', 'source-type', 'model', 'input-file', 'input-salt-out', 'c2pa-file', 'note', 'out'], multi: ['ingredient'] },
   anchor: { flags: [], values: ['seed-file', 'index', 'rpc', 'max-fee'] },
   complete: { flags: [], values: ['pending', 'tx', 'rpc'] },
-  verify: { flags: ['allow-unanchored', 'json'], values: ['producer', 'owner', 'content', 'content-digest', 'model', 'model-owner', 'input-file', 'input-salt-file', 'c2pa-file', 'artefact', 'at', 'rpc'], multi: ['ingredient'] },
+  verify: { flags: ['allow-unanchored', 'no-withdrawals', 'json'], values: ['producer', 'owner', 'content', 'content-digest', 'model', 'model-owner', 'input-file', 'input-salt-file', 'c2pa-file', 'artefact', 'at', 'rpc'], multi: ['ingredient', 'withdrawal'] },
   c2pa: { flags: [], values: ['model', 'action', 'source-type', 'when'] },
 };
 
@@ -582,6 +586,18 @@ async function cmdRegisterModel(positional, flags) {
   return 0;
 }
 
+async function cmdWithdraw(positional, flags) {
+  if (positional.length) throw usageError('withdraw takes options only');
+  const out = need(flags, 'out');
+  const producer = need(flags, 'producer');
+  checkPaths([['--out', out, !!flags.force]], [['--key', flags.key], ['--model', flags.model]].concat(/^[0-9a-f]{64}$/.test(producer) ? [] : [['--producer', producer]]));
+  const model = readJson(need(flags, 'model'), 'model', true);
+  const env = withSeed(need(flags, 'key'), '--key', (seed) => qt.withdrawProducer({ key: seed, model, producer: keyRef(producer, 'producer'), note: flags.note }));
+  writeEnvelope(out, env, flags.force);
+  console.log('producer ' + env.statement.producerKeyId + ' withdrawn from model ' + env.statement.modelId + ', written to ' + safe(out));
+  return 0;
+}
+
 async function cmdAttest(positional, flags) {
   if (positional.length) throw usageError('attest takes options only');
   const out = need(flags, 'out');
@@ -640,7 +656,7 @@ async function cmdVerify(positional, flags) {
   const env = readJson(positional[0], 'envelope', true);
   const opts = { requireAnchor: !flags['allow-unanchored'] };
   const type = env && typeof env === 'object' ? env.type : undefined;
-  const OUTPUT_ONLY = ['producer', 'content', 'content-digest', 'model', 'model-owner', 'input-file', 'input-salt-file', 'c2pa-file', 'ingredient'];
+  const OUTPUT_ONLY = ['producer', 'content', 'content-digest', 'model', 'model-owner', 'input-file', 'input-salt-file', 'c2pa-file', 'ingredient', 'withdrawal', 'no-withdrawals'];
   if (flags.artefact !== undefined) opts.artefactDigest = (await hashFile(flags.artefact, 'model artefact')).digest;
   if (type === 'model') {
     const stray = OUTPUT_ONLY.filter((k) => flags[k] !== undefined);
@@ -662,6 +678,9 @@ async function cmdVerify(positional, flags) {
     }
     if (flags['c2pa-file'] !== undefined) opts.c2paDigest = (await hashFile(flags['c2pa-file'], 'C2PA manifest')).digest;
     opts.ingredients = capList(flags.ingredient, 'ingredient', 64).map((f) => readJson(f, 'ingredient', true));
+    if (flags['no-withdrawals'] && flags.withdrawal) throw usageError('give --withdrawal files or --no-withdrawals, not both');
+    if (flags.withdrawal) opts.withdrawals = capList(flags.withdrawal, 'withdrawal', 256).map((f) => readJson(f, 'withdrawal', true));
+    else if (flags['no-withdrawals']) opts.withdrawals = [];
   }
   if (flags.at !== undefined) opts.at = flags.at;
   if (flags.rpc) opts.rpc = flags.rpc;
@@ -677,6 +696,10 @@ async function cmdVerify(positional, flags) {
   } else {
     if (res.type) console.log('type  ' + res.type);
     for (const c of res.checks) console.log((c.ok ? 'ok    ' : c.transport ? 'retry ' : c.indeterminate ? 'open  ' : 'FAIL  ') + safe(c.name) + '  ' + safe(c.detail));
+    if ((res.endpoints || []).length) {
+      console.log('endpoints  ' + res.endpoints.map(safe).join(', '));
+      if (res.officialEndpoints === false) console.log('notice  anchor times were confirmed by an endpoint that is not the official one for this network, so they are only as reliable as that endpoint');
+    }
     console.log(res.status.toUpperCase());
   }
   return res.status === 'valid' ? 0 : res.status === 'indeterminate' ? 2 : 1;
@@ -704,7 +727,7 @@ async function main() {
   }
   if (!Object.hasOwn(SPEC, command)) throw usageError('unknown command ' + safe(command).slice(0, 40));
   const { positional, flags } = parse(command, rest);
-  const run = { keygen: cmdKeygen, key: cmdKey, 'register-model': cmdRegisterModel, attest: cmdAttest, anchor: cmdAnchor, complete: cmdComplete, verify: cmdVerify, c2pa: cmdC2pa }[command];
+  const run = { keygen: cmdKeygen, key: cmdKey, 'register-model': cmdRegisterModel, withdraw: cmdWithdraw, attest: cmdAttest, anchor: cmdAnchor, complete: cmdComplete, verify: cmdVerify, c2pa: cmdC2pa }[command];
   return run(positional, flags);
 }
 

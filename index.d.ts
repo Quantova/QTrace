@@ -1,7 +1,7 @@
 // Copyright 2026 Quantova Inc
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-export type EnvelopeType = 'model' | 'output';
+export type EnvelopeType = 'model' | 'output' | 'withdrawal';
 export type Action = 'created' | 'edited' | 'converted' | 'placed' | 'translated' | 'transcoded' | 'published';
 export type SourceType =
   | 'trainedAlgorithmicMedia'
@@ -31,6 +31,14 @@ export interface KeyDescription {
 }
 
 export type KeyRef = string | Uint8Array | KeyDescription;
+
+export interface WithdrawProducerOptions {
+  key: Uint8Array;
+  model: Envelope;
+  producer: KeyRef;
+  withdrawnAt?: string;
+  note?: string;
+}
 
 export interface RegisterModelOptions {
   key: Uint8Array;
@@ -75,7 +83,7 @@ export interface AnchorOptions {
 }
 
 export interface VerifyOptions {
-  type?: EnvelopeType;
+  type?: 'model' | 'output';
   ownerKeyId?: KeyRef;
   ownerPublicKey?: Uint8Array | string;
   artefact?: Uint8Array;
@@ -92,6 +100,7 @@ export interface VerifyOptions {
   c2pa?: Uint8Array;
   c2paDigest?: string;
   ingredients?: Envelope[];
+  withdrawals?: Envelope[];
   requireAnchor?: boolean;
   at?: string;
   rpc?: string;
@@ -115,6 +124,8 @@ export interface VerifyResult {
   type: EnvelopeType | null;
   checks: VerifyCheck[];
   [field: string]: unknown;
+  endpoints: string[];
+  officialEndpoints: boolean | null;
 }
 
 export interface C2paActions {
@@ -133,6 +144,7 @@ export function publicKey(key: Uint8Array): Uint8Array;
 export function keyId(key: Uint8Array): string;
 export function describeKey(key: Uint8Array): KeyDescription;
 export function registerModel(options: RegisterModelOptions): Envelope;
+export function withdrawProducer(options: WithdrawProducerOptions): Envelope;
 export function commitInput(input: Uint8Array): { salt: Uint8Array; digest: string };
 export function attest(options: AttestOptions): Envelope;
 export function anchor(envelopes: Envelope | Envelope[], options: AnchorOptions): Promise<Envelope[]>;

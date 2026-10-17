@@ -13,6 +13,7 @@ module.exports = {
   keyId: T.keyId,
   describeKey: T.describeKey,
   registerModel: T.registerModel,
+  withdrawProducer: T.withdrawProducer,
   commitInput: T.commitInput,
   attest: T.attest,
   anchor: T.anchor,
