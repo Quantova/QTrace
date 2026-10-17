@@ -68,7 +68,7 @@ When an envelope is anchored, only a 32 byte Qstamp commitment reaches the chain
 5. When the prompt and its salt are supplied, they reproduce the committed value.
 6. When a C2PA manifest store is supplied, its fingerprint equals the one in the manifest.
 7. Every source the manifest names is supplied as a validly signed output with the referenced identity and is not dated after the output that uses it, and its anchor is verified when anchors are required. Sources supplied for a manifest that names none make the result invalid.
-8. Each anchor is verified under the record kind for its envelope type, the model kind for a withdrawal, with a SHA3 digest, and the claimed time is not later than the anchor time, allowing five minutes for clock difference. No envelope may be dated after the time of verification.
+8. Each anchor is verified under the record kind for its envelope type, the model kind for a withdrawal, with a SHA3 digest, and the claimed time is not later than the anchor time, allowing five minutes for clock difference, and no more than 24 hours before it, a window the verifier may change. When a time of verification is given, an anchor made after it does not prove the time. No envelope may be dated after the time of verification.
 
 A result is valid only when the expected producer or owner is given, the content is supplied, the named model and its expected owner are supplied, the withdrawals held for its producer are supplied, every source is supplied and every envelope is anchored. When any of these is missing the result is indeterminate rather than valid, so a gap in the evidence can never be mistaken for proof. A verifier may accept unanchored envelopes explicitly when it needs to.
 

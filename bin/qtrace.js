@@ -28,7 +28,7 @@ const HELP = `qtrace, post quantum content provenance for AI with Quantova time 
   qtrace verify <envelope> (--producer KEY | --owner KEY) [--content FILE | --content-digest HEX]
                 [--model FILE --model-owner KEY] [--input-file FILE --input-salt-file FILE] [--c2pa-file FILE]
                 [--ingredient FILE]... [--withdrawal FILE... | --no-withdrawals] [--artefact FILE] [--allow-unanchored]
-                [--at TIME] [--rpc URL] [--json]
+                [--at TIME] [--max-anchor-delay SECONDS] [--rpc URL] [--json]
   qtrace c2pa (<output envelope> | --action ACTION --source-type TYPE [--when TIME]) [--model FILE]
 
 A KEY is a 64 hex character key id or a qtrace-key/1 file written by the key command. Content and model files
@@ -53,7 +53,7 @@ const SPEC = {
   attest: { flags: ['force'], values: ['key', 'content', 'content-digest', 'content-size', 'media-type', 'action', 'source-type', 'model', 'input-file', 'input-salt-out', 'c2pa-file', 'note', 'out'], multi: ['ingredient'] },
   anchor: { flags: [], values: ['seed-file', 'index', 'rpc', 'max-fee'] },
   complete: { flags: [], values: ['pending', 'tx', 'rpc'] },
-  verify: { flags: ['allow-unanchored', 'no-withdrawals', 'json'], values: ['producer', 'owner', 'content', 'content-digest', 'model', 'model-owner', 'input-file', 'input-salt-file', 'c2pa-file', 'artefact', 'at', 'rpc'], multi: ['ingredient', 'withdrawal'] },
+  verify: { flags: ['allow-unanchored', 'no-withdrawals', 'json'], values: ['producer', 'owner', 'content', 'content-digest', 'model', 'model-owner', 'input-file', 'input-salt-file', 'c2pa-file', 'artefact', 'at', 'max-anchor-delay', 'rpc'], multi: ['ingredient', 'withdrawal'] },
   c2pa: { flags: [], values: ['model', 'action', 'source-type', 'when'] },
 };
 
@@ -683,6 +683,10 @@ async function cmdVerify(positional, flags) {
     else if (flags['no-withdrawals']) opts.withdrawals = [];
   }
   if (flags.at !== undefined) opts.at = flags.at;
+  if (flags['max-anchor-delay'] !== undefined) {
+    if (!/^[1-9][0-9]{0,9}$/.test(flags['max-anchor-delay'])) throw usageError('--max-anchor-delay is a whole number of seconds');
+    opts.maxAnchorDelay = Number(flags['max-anchor-delay']);
+  }
   if (flags.rpc) opts.rpc = flags.rpc;
   let res;
   try {
