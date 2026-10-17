@@ -14,6 +14,8 @@ module.exports = {
   describeKey: T.describeKey,
   registerModel: T.registerModel,
   withdrawProducer: T.withdrawProducer,
+  revokeOwnerKey: T.revokeOwnerKey,
+  rotateOwnerKey: T.rotateOwnerKey,
   commitInput: T.commitInput,
   attest: T.attest,
   anchor: T.anchor,

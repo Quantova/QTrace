@@ -20,24 +20,34 @@ const HELP = `qtrace, post quantum content provenance for AI with Quantova time 
   qtrace register-model --key <owner keyfile> --name TEXT [--version TEXT] (--model-file FILE | --model-digest HEX)
                         [--card-file FILE | --card-digest HEX] [--producer KEY]... [--note TEXT] --out FILE
   qtrace withdraw --key <owner keyfile> --model FILE --producer KEY [--note TEXT] --out FILE
+  qtrace revoke-owner-key --key <owner keyfile> [--note TEXT] --out FILE
+  qtrace rotate-owner-key --key <owner keyfile> --successor KEY [--note TEXT] --out FILE
   qtrace attest --key <producer keyfile> (--content FILE | --content-digest HEX --content-size N) --media-type TYPE
                 [--action ACTION] [--source-type TYPE] [--model FILE] [--input-file FILE --input-salt-out FILE]
                 [--ingredient FILE]... [--c2pa-file FILE] [--note TEXT] --out FILE
-  qtrace anchor <envelope>... --seed-file <file> [--index N] [--rpc URL]... [--trust-single-endpoint] [--max-fee N]
-  qtrace complete <envelope>... --pending FILE [--tx ID] [--rpc URL]... [--trust-single-endpoint]
+  qtrace anchor <envelope>... --seed-file <file> [--index N] [--rpc URL]... [--trust-single-endpoint] [--allow-endpoint HOST]... [--allow-loopback] [--max-fee N]
+  qtrace complete <envelope>... --pending FILE [--tx ID] [--rpc URL]... [--trust-single-endpoint] [--allow-endpoint HOST]...
+                [--allow-loopback]
   qtrace verify <envelope> (--producer KEY | --owner KEY) [--content FILE | --content-digest HEX]
                 [--model FILE --model-owner KEY] [--input-file FILE --input-salt-file FILE] [--c2pa-file FILE]
-                [--ingredient FILE]... [--withdrawal FILE... | --no-withdrawals] [--artefact FILE] [--allow-unanchored]
-                [--at TIME] [--max-anchor-delay SECONDS] [--rpc URL]... [--trust-single-endpoint] [--json]
+                [--ingredient FILE]... [--withdrawal FILE... | --no-withdrawals]
+                [--owner-key-change FILE... | --no-owner-key-changes] [--artefact FILE] [--allow-unanchored]
+                [--at TIME] [--max-anchor-delay SECONDS] [--expect-sender ADDRESS]... [--rpc URL]... [--trust-custom-endpoints]
+                [--trust-single-endpoint] [--allow-endpoint HOST]... [--allow-loopback] [--json]
   qtrace c2pa (<output envelope> | --action ACTION --source-type TYPE [--when TIME]) [--model FILE]
 
 A KEY is a 64 hex character key id or a qtrace-key/1 file written by the key command. Content and model files
 are hashed with SHA3-256 as they are read and never leave this machine. Models and outputs are anchored in
 separate batches, and a model owner withdraws a producer with a withdrawal anchored in its own batch. If an
 anchor is interrupted after its transaction was sent, the pending stamp is kept beside the first envelope and
-complete finishes it.
+complete finishes it. A model owner revokes its key, or rotates it to a successor key, with an owner key change
+anchored in its own batch. Registrations and outputs anchored after that change are refused. An anchor counts
+only when it is proven by a finality certificate or by official endpoints of two different operators, any other
+anchor is UNPROVEN and never VALID. Endpoints given with --rpc are consulted by verify only with --trust-custom-endpoints, loopback endpoints only
+with --allow-loopback and private network endpoints only when named with --allow-endpoint. --expect-sender names
+the account that must have signed each anchor.
 
-Exit codes are 0 for valid, 1 for invalid or an error, 2 for indeterminate and 64 for usage errors.`;
+Exit codes are 0 for valid, 1 for invalid or an error, 2 for indeterminate or unproven and 64 for usage errors.`;
 
 function usageError(message) {
   const e = new Error(message);
@@ -45,15 +55,27 @@ function usageError(message) {
   return e;
 }
 
+function endpointOptions(flags) {
+  const out = {};
+  if (flags.rpc) out.clients = flags.rpc;
+  if (flags['allow-endpoint']) out.endpointAllowList = flags['allow-endpoint'];
+  if (flags['trust-single-endpoint']) out.trustSingleEndpoint = true;
+  if (flags['trust-custom-endpoints']) out.trustCustomEndpoints = true;
+  if (flags['allow-loopback']) out.allowLoopback = true;
+  return out;
+}
+
 const SPEC = {
   keygen: { flags: ['force'], values: [] },
   key: { flags: [], values: [] },
   'register-model': { flags: ['force'], values: ['key', 'name', 'version', 'model-file', 'model-digest', 'card-file', 'card-digest', 'note', 'out'], multi: ['producer'] },
   withdraw: { flags: ['force'], values: ['key', 'model', 'producer', 'note', 'out'] },
+  'revoke-owner-key': { flags: ['force'], values: ['key', 'note', 'out'] },
+  'rotate-owner-key': { flags: ['force'], values: ['key', 'successor', 'note', 'out'] },
   attest: { flags: ['force'], values: ['key', 'content', 'content-digest', 'content-size', 'media-type', 'action', 'source-type', 'model', 'input-file', 'input-salt-out', 'c2pa-file', 'note', 'out'], multi: ['ingredient'] },
-  anchor: { flags: ['trust-single-endpoint'], values: ['seed-file', 'index', 'max-fee'], multi: ['rpc'] },
-  complete: { flags: ['trust-single-endpoint'], values: ['pending', 'tx'], multi: ['rpc'] },
-  verify: { flags: ['allow-unanchored', 'no-withdrawals', 'json', 'trust-single-endpoint'], values: ['producer', 'owner', 'content', 'content-digest', 'model', 'model-owner', 'input-file', 'input-salt-file', 'c2pa-file', 'artefact', 'at', 'max-anchor-delay'], multi: ['ingredient', 'withdrawal', 'rpc'] },
+  anchor: { flags: ['trust-single-endpoint', 'allow-loopback'], values: ['seed-file', 'index', 'max-fee'], multi: ['rpc', 'allow-endpoint'] },
+  complete: { flags: ['trust-single-endpoint', 'allow-loopback'], values: ['pending', 'tx'], multi: ['rpc', 'allow-endpoint'] },
+  verify: { flags: ['allow-unanchored', 'no-withdrawals', 'no-owner-key-changes', 'json', 'trust-single-endpoint', 'trust-custom-endpoints', 'allow-loopback'], values: ['producer', 'owner', 'content', 'content-digest', 'model', 'model-owner', 'input-file', 'input-salt-file', 'c2pa-file', 'artefact', 'at', 'max-anchor-delay'], multi: ['ingredient', 'withdrawal', 'owner-key-change', 'rpc', 'allow-endpoint', 'expect-sender'] },
   c2pa: { flags: [], values: ['model', 'action', 'source-type', 'when'] },
 };
 
@@ -364,7 +386,7 @@ async function cmdAnchor(positional, flags) {
   };
   let anchored;
   try {
-    anchored = await qt.anchor(envs, { seed, index, network: 'testnet', clients: flags.rpc, trustSingleEndpoint: !!flags['trust-single-endpoint'], maxFee: flags['max-fee'], onPending: keep });
+    anchored = await qt.anchor(envs, { seed, index, network: 'testnet', ...endpointOptions(flags), maxFee: flags['max-fee'], onPending: keep });
   } catch (e) {
     if (e && e.pending && typeof e.pending === 'object') {
       let message = 'the anchoring transaction may already have been sent, ' + friendly(e);
@@ -401,7 +423,7 @@ async function cmdComplete(positional, flags) {
     if (e && typeof e === 'object' && !Array.isArray(e)) delete e.anchor;
     return e;
   });
-  const anchored = await qt.complete(envs, pending, { clients: flags.rpc, trustSingleEndpoint: !!flags['trust-single-endpoint'] });
+  const anchored = await qt.complete(envs, pending, endpointOptions(flags));
   const code = saveAnchored(positional, anchored);
   if (code === 0) {
     fs.rmSync(pendingFile, { force: true });
@@ -598,6 +620,19 @@ async function cmdWithdraw(positional, flags) {
   return 0;
 }
 
+async function cmdOwnerKey(positional, flags, rotate) {
+  if (positional.length) throw usageError((rotate ? 'rotate' : 'revoke') + '-owner-key takes options only');
+  const out = need(flags, 'out');
+  const successor = rotate ? need(flags, 'successor') : undefined;
+  checkPaths([['--out', out, !!flags.force]], [['--key', flags.key]].concat(successor === undefined || /^[0-9a-f]{64}$/.test(successor) ? [] : [['--successor', successor]]));
+  const env = withSeed(need(flags, 'key'), '--key', (seed) => (rotate
+    ? qt.rotateOwnerKey({ key: seed, successor: keyRef(successor, 'successor'), note: flags.note })
+    : qt.revokeOwnerKey({ key: seed, note: flags.note })));
+  writeEnvelope(out, env, flags.force);
+  console.log('owner key ' + env.statement.ownerKeyId + (rotate ? ' handed over to ' + env.statement.successorKeyId : ' revoked') + ', anchor it at once, written to ' + safe(out));
+  return 0;
+}
+
 async function cmdAttest(positional, flags) {
   if (positional.length) throw usageError('attest takes options only');
   const out = need(flags, 'out');
@@ -657,8 +692,16 @@ async function cmdVerify(positional, flags) {
   const opts = { requireAnchor: !flags['allow-unanchored'] };
   const type = env && typeof env === 'object' ? env.type : undefined;
   const OUTPUT_ONLY = ['producer', 'content', 'content-digest', 'model', 'model-owner', 'input-file', 'input-salt-file', 'c2pa-file', 'ingredient', 'withdrawal', 'no-withdrawals'];
+  if (flags['no-owner-key-changes'] && flags['owner-key-change']) throw usageError('give --owner-key-change files or --no-owner-key-changes, not both');
+  if (flags['owner-key-change']) opts.ownerKeyChanges = capList(flags['owner-key-change'], 'owner-key-change', 256).map((f) => readJson(f, 'owner key change', true));
+  else if (flags['no-owner-key-changes']) opts.ownerKeyChanges = [];
   if (flags.artefact !== undefined) opts.artefactDigest = (await hashFile(flags.artefact, 'model artefact')).digest;
-  if (type === 'model') {
+  if (type === 'keychange') {
+    const stray = OUTPUT_ONLY.concat(['artefact']).filter((k) => flags[k] !== undefined);
+    if (stray.length) throw usageError('an owner key change is checked against --owner only');
+    opts.type = 'keychange';
+    opts.ownerKeyId = keyRef(need(flags, 'owner'), 'owner');
+  } else if (type === 'model') {
     const stray = OUTPUT_ONLY.filter((k) => flags[k] !== undefined);
     if (stray.length) throw usageError('a model registration is checked against --owner and --artefact only, --' + stray.join(', --') + ' apply to an output manifest');
     opts.ownerKeyId = keyRef(need(flags, 'owner'), 'owner');
@@ -687,8 +730,8 @@ async function cmdVerify(positional, flags) {
     if (!/^[1-9][0-9]{0,9}$/.test(flags['max-anchor-delay'])) throw usageError('--max-anchor-delay is a whole number of seconds');
     opts.maxAnchorDelay = Number(flags['max-anchor-delay']);
   }
-  if (flags.rpc) opts.clients = flags.rpc;
-  if (flags['trust-single-endpoint']) opts.trustSingleEndpoint = true;
+  Object.assign(opts, endpointOptions(flags));
+  if (flags['expect-sender']) opts.expectedSender = flags['expect-sender'];
   let res;
   try {
     res = await qt.verify(env, opts);
@@ -700,14 +743,15 @@ async function cmdVerify(positional, flags) {
     process.stdout.write(asciiJson(res) + '\n');
   } else {
     if (res.type) console.log('type  ' + res.type);
-    for (const c of res.checks) console.log((c.ok ? 'ok    ' : c.transport ? 'retry ' : c.indeterminate ? 'open  ' : 'FAIL  ') + safe(c.name) + '  ' + safe(c.detail));
+    for (const c of res.checks) console.log((c.ok ? 'ok    ' : c.transport ? 'retry ' : c.indeterminate || c.unproven ? 'open  ' : 'FAIL  ') + safe(c.name) + '  ' + safe(c.detail));
+    for (const n of res.notes || []) console.log('note  ' + safe(n));
     if ((res.endpoints || []).length) {
       console.log('endpoints  ' + res.endpoints.map(safe).join(', '));
-      if (res.officialEndpoints === false) console.log('notice  anchor times were confirmed by an endpoint that is not the official one for this network, so they are only as reliable as that endpoint');
+      if (res.officialEndpoints === false) console.log('notice  endpoints other than the official ones of this network were consulted, an anchor confirmed only by them is not proven');
     }
     console.log(res.status.toUpperCase());
   }
-  return res.status === 'valid' ? 0 : res.status === 'indeterminate' ? 2 : 1;
+  return res.status === 'valid' ? 0 : res.status === 'indeterminate' || res.status === 'unproven' ? 2 : 1;
 }
 
 async function cmdC2pa(positional, flags) {
@@ -732,7 +776,7 @@ async function main() {
   }
   if (!Object.hasOwn(SPEC, command)) throw usageError('unknown command ' + safe(command).slice(0, 40));
   const { positional, flags } = parse(command, rest);
-  const run = { keygen: cmdKeygen, key: cmdKey, 'register-model': cmdRegisterModel, withdraw: cmdWithdraw, attest: cmdAttest, anchor: cmdAnchor, complete: cmdComplete, verify: cmdVerify, c2pa: cmdC2pa }[command];
+  const run = { keygen: cmdKeygen, key: cmdKey, 'register-model': cmdRegisterModel, withdraw: cmdWithdraw, 'revoke-owner-key': (p, f) => cmdOwnerKey(p, f, false), 'rotate-owner-key': (p, f) => cmdOwnerKey(p, f, true), attest: cmdAttest, anchor: cmdAnchor, complete: cmdComplete, verify: cmdVerify, c2pa: cmdC2pa }[command];
   return run(positional, flags);
 }
 

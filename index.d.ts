@@ -1,7 +1,7 @@
 // Copyright 2026 Quantova Inc
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-export type EnvelopeType = 'model' | 'output' | 'withdrawal';
+export type EnvelopeType = 'model' | 'output' | 'withdrawal' | 'keychange';
 export type Action = 'created' | 'edited' | 'converted' | 'placed' | 'translated' | 'transcoded' | 'published';
 export type SourceType =
   | 'trainedAlgorithmicMedia'
@@ -38,6 +38,16 @@ export interface WithdrawProducerOptions {
   producer: KeyRef;
   withdrawnAt?: string;
   note?: string;
+}
+
+export interface RevokeOwnerKeyOptions {
+  key: Uint8Array;
+  changedAt?: string;
+  note?: string;
+}
+
+export interface RotateOwnerKeyOptions extends RevokeOwnerKeyOptions {
+  successor: KeyRef;
 }
 
 export interface RegisterModelOptions {
@@ -78,6 +88,8 @@ export interface AnchorOptions {
   client?: unknown;
   clients?: Array<string | unknown>;
   trustSingleEndpoint?: boolean;
+  allowLoopback?: boolean;
+  endpointAllowList?: string[];
   meter?: number;
   maxFee?: string | number;
   timeoutMs?: number;
@@ -85,7 +97,7 @@ export interface AnchorOptions {
 }
 
 export interface VerifyOptions {
-  type?: 'model' | 'output';
+  type?: 'model' | 'output' | 'keychange';
   ownerKeyId?: KeyRef;
   ownerPublicKey?: Uint8Array | string;
   artefact?: Uint8Array;
@@ -103,12 +115,18 @@ export interface VerifyOptions {
   c2paDigest?: string;
   ingredients?: Envelope[];
   withdrawals?: Envelope[];
+  ownerKeyChanges?: Envelope[];
   requireAnchor?: boolean;
+  maxAnchorDelay?: number;
   at?: string;
   rpc?: string | string[];
   client?: unknown;
   clients?: Array<string | unknown>;
   trustSingleEndpoint?: boolean;
+  trustCustomEndpoints?: boolean;
+  allowLoopback?: boolean;
+  endpointAllowList?: string[];
+  expectedSender?: string | string[];
   contract?: string;
   trustCustomContract?: boolean;
 }
@@ -119,11 +137,12 @@ export interface VerifyCheck {
   detail: string;
   transport: boolean;
   indeterminate: boolean;
+  unproven: boolean;
 }
 
 export interface VerifyResult {
   valid: boolean;
-  status: 'valid' | 'invalid' | 'indeterminate';
+  status: 'valid' | 'invalid' | 'indeterminate' | 'unproven';
   type: EnvelopeType | null;
   checks: VerifyCheck[];
   [field: string]: unknown;
@@ -148,10 +167,12 @@ export function keyId(key: Uint8Array): string;
 export function describeKey(key: Uint8Array): KeyDescription;
 export function registerModel(options: RegisterModelOptions): Envelope;
 export function withdrawProducer(options: WithdrawProducerOptions): Envelope;
+export function revokeOwnerKey(options: RevokeOwnerKeyOptions): Envelope;
+export function rotateOwnerKey(options: RotateOwnerKeyOptions): Envelope;
 export function commitInput(input: Uint8Array): { salt: Uint8Array; digest: string };
 export function attest(options: AttestOptions): Envelope;
 export function anchor(envelopes: Envelope | Envelope[], options: AnchorOptions): Promise<Envelope[]>;
-export function complete(envelopes: Envelope | Envelope[], pending: unknown, options?: { rpc?: string | string[]; client?: unknown; clients?: Array<string | unknown>; trustSingleEndpoint?: boolean; timeoutMs?: number }): Promise<Envelope[]>;
+export function complete(envelopes: Envelope | Envelope[], pending: unknown, options?: { rpc?: string | string[]; client?: unknown; clients?: Array<string | unknown>; trustSingleEndpoint?: boolean; allowLoopback?: boolean; endpointAllowList?: string[]; timeoutMs?: number }): Promise<Envelope[]>;
 export function c2paActions(source: Envelope | PlannedOutput, model?: Envelope): C2paActions;
 export function verify(envelope: unknown, options: VerifyOptions): Promise<VerifyResult>;
 export function refOf(envelope: Envelope): string;
