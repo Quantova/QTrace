@@ -74,8 +74,10 @@ export interface AnchorOptions {
   seed: Uint8Array;
   index: number;
   network?: 'testnet';
-  rpc?: string;
+  rpc?: string | string[];
   client?: unknown;
+  clients?: Array<string | unknown>;
+  trustSingleEndpoint?: boolean;
   meter?: number;
   maxFee?: string | number;
   timeoutMs?: number;
@@ -103,9 +105,10 @@ export interface VerifyOptions {
   withdrawals?: Envelope[];
   requireAnchor?: boolean;
   at?: string;
-  rpc?: string;
+  rpc?: string | string[];
   client?: unknown;
   clients?: Array<string | unknown>;
+  trustSingleEndpoint?: boolean;
   contract?: string;
   trustCustomContract?: boolean;
 }
@@ -148,7 +151,7 @@ export function withdrawProducer(options: WithdrawProducerOptions): Envelope;
 export function commitInput(input: Uint8Array): { salt: Uint8Array; digest: string };
 export function attest(options: AttestOptions): Envelope;
 export function anchor(envelopes: Envelope | Envelope[], options: AnchorOptions): Promise<Envelope[]>;
-export function complete(envelopes: Envelope | Envelope[], pending: unknown, options?: { rpc?: string; client?: unknown; timeoutMs?: number }): Promise<Envelope[]>;
+export function complete(envelopes: Envelope | Envelope[], pending: unknown, options?: { rpc?: string | string[]; client?: unknown; clients?: Array<string | unknown>; trustSingleEndpoint?: boolean; timeoutMs?: number }): Promise<Envelope[]>;
 export function c2paActions(source: Envelope | PlannedOutput, model?: Envelope): C2paActions;
 export function verify(envelope: unknown, options: VerifyOptions): Promise<VerifyResult>;
 export function refOf(envelope: Envelope): string;
