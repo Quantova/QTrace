@@ -99,6 +99,8 @@ qtrace keygen owner.key
 qtrace keygen service.key
 qtrace key owner.key > owner.pub.json
 qtrace key service.key > service.pub.json
+qtrace keygen owner2.key
+qtrace key owner2.key > owner2.pub.json
 
 qtrace register-model --key owner.key --name "Atlas Vision" --version 2.1 --model-file weights.safetensors --producer service.pub.json --out model.json
 qtrace anchor model.json --seed-file account.key
