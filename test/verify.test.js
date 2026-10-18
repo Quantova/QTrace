@@ -144,3 +144,46 @@ test('endpoints chosen by the caller need trustCustomEndpoints, loopback needs a
   const right = await qt.verify(output, Object.assign({ expectedSender: w.chain.core.address(SEED, 0) }, opts, w.ep));
   assert.strictEqual(right.status, 'valid', JSON.stringify(right.checks.filter((c) => !c.ok)));
 });
+
+test('an output with sources is indeterminate, never invalid, when only the chain time is unavailable', async (t) => {
+  pinned(t);
+  const w = world();
+  const photo = Buffer.from('an original photograph');
+  const edit = Buffer.from('an edited photograph');
+  const src = await w.anchor(qt.attest({ key: w.producer, content: photo, mediaType: 'image/png', sourceType: 'digitalCreation' }));
+  const out = await w.anchor(qt.attest({ key: w.producer, content: edit, mediaType: 'image/png', action: 'edited', sourceType: 'humanEdits', ingredients: [src] }));
+  const opts = Object.assign({ producerKeyId: qt.keyId(w.producer), content: edit, ingredients: [src], withdrawals: [], ownerKeyChanges: [] }, w.ep);
+  const good = await qt.verify(out, opts);
+  assert.strictEqual(good.status, 'valid', JSON.stringify(good.checks.filter((c) => !c.ok)));
+  const real = qstamp.chainTime;
+  qstamp.chainTime = async () => {
+    throw new Error('the endpoints did not answer in time');
+  };
+  let down;
+  try {
+    down = await qt.verify(out, opts);
+  } finally {
+    qstamp.chainTime = real;
+  }
+  assert.strictEqual(down.status, 'indeterminate', JSON.stringify(down.checks.filter((c) => !c.ok)));
+  const ing = down.checks.find((c) => c.name === 'ingredients');
+  assert.ok(ing && ing.ok, JSON.stringify(ing));
+});
+
+test('options are read only from the object given and never from Object.prototype', async () => {
+  const w = world();
+  const out = qt.attest({ key: w.producer, content: image, mediaType: 'image/png', sourceType: 'digitalCreation' });
+  const opts = Object.assign({ producerKeyId: qt.keyId(w.producer), content: image }, w.ep);
+  const before = await qt.verify(out, opts);
+  assert.notStrictEqual(before.status, 'valid');
+  const polluted = { requireAnchor: false, withdrawals: [], ownerKeyChanges: [], ingredients: [], strict: false, action: 'edited' };
+  try {
+    for (const [k, v] of Object.entries(polluted)) Object.prototype[k] = v;
+    const after = await qt.verify(out, opts);
+    assert.strictEqual(after.status, before.status, JSON.stringify(after.checks.filter((c) => !c.ok)));
+    const again = qt.attest({ key: w.producer, content: image, mediaType: 'image/png', sourceType: 'digitalCreation' });
+    assert.strictEqual(again.statement.action, 'created');
+  } finally {
+    for (const k of Object.keys(polluted)) delete Object.prototype[k];
+  }
+});
