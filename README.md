@@ -84,6 +84,16 @@ A model owner whose key is exposed or retired signs an owner key change with tha
 
 QTrace uses the action names of the C2PA specification and the digital source types of the IPTC vocabulary, and can export a C2PA actions assertion. It does not produce a signed C2PA manifest, because the C2PA specification currently lists only classical signature algorithms. It anchors the fingerprint of an existing C2PA manifest store instead, so a classical credential gains a post quantum time proof. The c2paActions function returns only the standard assertion, and it refuses an output envelope whose signature does not verify.
 
+## Threat model
+
+QTrace protects the model registrations, output manifests, producer withdrawals and owner key changes, the owner and producer keys, the prompt salts, and the receipts of anchors.
+
+It trusts the producer or owner key that the verifier names, its own trusted copy of a registration when it relies on one model, the network values pinned in the Qstamp release it depends on, and the storage that holds keys and salts. It does not trust the gateway or any endpoint, the platform that carries the content, or any party that holds or presents a manifest.
+
+A manifest moved onto other content fails its content fingerprint, and a manifest relies on one exact signed registration and on exact signed sources through their references. A producer that the owner did not authorise is refused. Signatures use the context string quantova/qtrace/1, so a signature made for another SDK or for a network transaction never verifies here, and every anchor is checked against the genesis and contract pinned in the Qstamp release. A hostile gateway cannot make an unproven anchor count, and the time of verification comes from the chain unless the verifier gives one, never from the local clock. A stated time later than its anchor, allowing five minutes, or more than 24 hours before it does not prove that time, and a source dated after its output is refused. A model owner withdraws a producer, or revokes or rotates its own key, by an anchored statement, and records anchored at or after it are invalid while earlier ones stay valid. Envelopes are parsed with strict field checks and fixed list limits, and the command line reads at most 1 MiB of envelope.
+
+QTrace keeps no ledger and signs no series. Left to the integrator are the protection of keys and salts, supplying every withdrawal and owner key change it holds, and receiving owner key changes through the same trusted channel as the owner key, because a holder of a stolen key can retire it first and name its own successor. QTrace does not prove that the named model computed the content or detect content that was never attested.
+
 ## Installation
 
 ```
