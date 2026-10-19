@@ -94,6 +94,7 @@ export interface AnchorOptions {
   maxFee?: string | number;
   timeoutMs?: number;
   onPending?: (pending: unknown) => void | Promise<void>;
+  trustCustomEndpoints?: boolean;
 }
 
 export interface VerifyOptions {
