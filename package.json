@@ -1,6 +1,6 @@
 {
   "name": "@quantovainc/qtrace",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Post quantum content provenance for AI. Attests, under a producer key the model owner authorised, which registered model a document, image or answer came from and when, with ML-DSA-65 under FIPS 204, SHA3 fingerprints and Quantova time proofs.",
   "main": "index.js",
   "types": "index.d.ts",
@@ -39,7 +39,7 @@
     "linux"
   ],
   "dependencies": {
-    "@quantovainc/qstamp": "0.4.1"
+    "@quantovainc/qstamp": "0.4.2"
   },
   "keywords": [
     "post-quantum",
