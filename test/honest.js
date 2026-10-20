@@ -2,10 +2,10 @@
 
 const path = require('path');
 const q = require('..');
-const { makeChain, client, SEED, qstampRoot } = require('./chain');
+const { makeChain, client, SEED } = require('./chain');
 
 const ROOT = path.join(__dirname, '..');
-const qstamp = require(qstampRoot(ROOT));
+const qstamp = require('@quantovainc/qstamp');
 
 function confirmedByTestChain(r) {
   return !!r && r.status === 'unproven' && r.trust === 'custom-endpoints' && Array.isArray(r.checks) && r.checks.every((c) => c.ok || c.name === 'proof');
