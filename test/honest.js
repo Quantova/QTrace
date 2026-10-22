@@ -18,7 +18,7 @@ const failing = (r) => r.checks.filter((c) => !c.ok).map((c) => c.name + ': ' + 
 
 function world(startTime) {
   const chain = makeChain(ROOT, { time: startTime });
-  const ep = { clients: [client(chain, 'a'), client(chain, 'b')], trustCustomEndpoints: true };
+  const ep = { network: 'testnet', clients: [client(chain, 'a'), client(chain, 'b')], trustCustomEndpoints: true };
   const anchor = async (env, t) => {
     chain.nextBlockTime = t;
     return (await q.anchor(env, Object.assign({ seed: SEED, index: 0 }, ep)))[0];

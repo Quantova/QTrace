@@ -8,6 +8,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const qt = require('..');
+const qstamp = require('@quantovainc/qstamp');
 
 const ENVELOPE_MAX = 1024 * 1024;
 const KEY_JSON_MAX = 64 * 1024;
@@ -25,10 +26,10 @@ const HELP = `qtrace, post quantum content provenance for AI with Quantova time 
   qtrace attest --key <producer keyfile> (--content FILE | --content-digest HEX --content-size N) --media-type TYPE
                 [--action ACTION] [--source-type TYPE] [--model FILE] [--input-file FILE --input-salt-out FILE]
                 [--ingredient FILE]... [--c2pa-file FILE] [--note TEXT] --out FILE
-  qtrace anchor <envelope>... --seed-file <file> [--index N] [--rpc URL]... [--trust-single-endpoint] [--allow-endpoint HOST]... [--allow-loopback] [--max-fee N]
+  qtrace anchor <envelope>... --network NAME --seed-file <file> [--index N] [--rpc URL]... [--trust-single-endpoint] [--allow-endpoint HOST]... [--allow-loopback] [--max-fee N]
   qtrace complete <envelope>... --pending FILE [--tx ID] [--rpc URL]... [--trust-single-endpoint] [--allow-endpoint HOST]...
                 [--allow-loopback]
-  qtrace verify <envelope> --type (model | output | keychange) (--producer KEY | --owner KEY) [--content FILE | --content-digest HEX]
+  qtrace verify <envelope> --type (model | output | keychange) --network NAME (--producer KEY | --owner KEY) [--content FILE | --content-digest HEX]
                 [--model FILE --model-owner KEY] [--input-file FILE --input-salt-file FILE] [--c2pa-file FILE]
                 [--ingredient FILE]... [--withdrawal FILE... | --no-withdrawals]
                 [--owner-key-change FILE... | --no-owner-key-changes] [--artefact FILE] [--allow-unanchored]
@@ -45,7 +46,9 @@ anchored in its own batch. Registrations and outputs anchored after that change 
 only when it is proven by a finality certificate or by official endpoints of two different operators, any other
 anchor is UNPROVEN and never VALID. Endpoints given with --rpc are consulted by verify only with --trust-custom-endpoints, loopback endpoints only
 with --allow-loopback and private network endpoints only when named with --allow-endpoint. --expect-sender names
-the account that must have signed each anchor.
+the account that must have signed each anchor. --network names the network the envelopes are anchored on,
+testnet for the public network, and verify also takes custom for a chain reached only through endpoints given
+with --rpc and --trust-custom-endpoints. An anchor recorded on another network fails.
 
 Exit codes are 0 for valid, 1 for invalid or an error, 2 for indeterminate or unproven and 64 for usage errors.`;
 
@@ -53,6 +56,13 @@ function usageError(message) {
   const e = new Error(message);
   e.usage = true;
   return e;
+}
+
+function networkFlag(flags, verifying) {
+  const names = Object.keys(qstamp.NETWORKS).concat(verifying ? ['custom'] : []);
+  if (flags.network === undefined) throw usageError('--network is required');
+  if (!names.includes(flags.network)) throw usageError('--network is one of ' + names.join(', ') + ', the network the envelopes are anchored on');
+  return flags.network;
 }
 
 function endpointOptions(flags) {
@@ -73,9 +83,9 @@ const SPEC = {
   'revoke-owner-key': { flags: ['force'], values: ['key', 'note', 'out'] },
   'rotate-owner-key': { flags: ['force'], values: ['key', 'successor', 'note', 'out'] },
   attest: { flags: ['force'], values: ['key', 'content', 'content-digest', 'content-size', 'media-type', 'action', 'source-type', 'model', 'input-file', 'input-salt-out', 'c2pa-file', 'note', 'out'], multi: ['ingredient'] },
-  anchor: { flags: ['trust-single-endpoint', 'allow-loopback'], values: ['seed-file', 'index', 'max-fee'], multi: ['rpc', 'allow-endpoint'] },
+  anchor: { flags: ['trust-single-endpoint', 'allow-loopback'], values: ['seed-file', 'index', 'max-fee', 'network'], multi: ['rpc', 'allow-endpoint'] },
   complete: { flags: ['trust-single-endpoint', 'allow-loopback'], values: ['pending', 'tx'], multi: ['rpc', 'allow-endpoint'] },
-  verify: { flags: ['allow-unanchored', 'no-withdrawals', 'no-owner-key-changes', 'json', 'trust-single-endpoint', 'trust-custom-endpoints', 'allow-loopback'], values: ['type', 'producer', 'owner', 'content', 'content-digest', 'model', 'model-owner', 'input-file', 'input-salt-file', 'c2pa-file', 'artefact', 'at', 'max-anchor-delay'], multi: ['ingredient', 'withdrawal', 'owner-key-change', 'rpc', 'allow-endpoint', 'expect-sender'] },
+  verify: { flags: ['allow-unanchored', 'no-withdrawals', 'no-owner-key-changes', 'json', 'trust-single-endpoint', 'trust-custom-endpoints', 'allow-loopback'], values: ['type', 'producer', 'owner', 'content', 'content-digest', 'model', 'model-owner', 'input-file', 'input-salt-file', 'c2pa-file', 'artefact', 'at', 'max-anchor-delay', 'network'], multi: ['ingredient', 'withdrawal', 'owner-key-change', 'rpc', 'allow-endpoint', 'expect-sender'] },
   c2pa: { flags: [], values: ['model', 'action', 'source-type', 'when'] },
 };
 
@@ -406,6 +416,7 @@ async function cmdAnchor(positional, flags) {
   const envs = positional.map((f) => readJson(f, 'envelope', true, ENVELOPE_MAX));
   let index = 0;
   if (flags.index !== undefined) index = seqFlag(flags.index, 'index');
+  const network = networkFlag(flags, false);
   const seed = readSeed(flags['seed-file'] || process.env.QSTAMP_SEED_FILE, '--seed-file of a funded Quantova account');
   let saved = false;
   const keep = (pending) => {
@@ -415,7 +426,7 @@ async function cmdAnchor(positional, flags) {
   };
   let anchored;
   try {
-    anchored = await qt.anchor(envs, { seed, index, network: 'testnet', ...endpointOptions(flags), maxFee: flags['max-fee'], onPending: keep });
+    anchored = await qt.anchor(envs, { seed, index, network, ...endpointOptions(flags), maxFee: flags['max-fee'], onPending: keep });
   } catch (e) {
     if (e && e.pending && typeof e.pending === 'object') {
       let message = 'the anchoring transaction may already have been sent, ' + friendly(e);
@@ -762,6 +773,7 @@ async function cmdVerify(positional, flags) {
     if (!/^[1-9][0-9]{0,9}$/.test(flags['max-anchor-delay'])) throw usageError('--max-anchor-delay is a whole number of seconds');
     opts.maxAnchorDelay = Number(flags['max-anchor-delay']);
   }
+  opts.network = networkFlag(flags, true);
   Object.assign(opts, endpointOptions(flags));
   if (flags['expect-sender']) opts.expectedSender = flags['expect-sender'];
   let res;

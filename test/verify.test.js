@@ -25,7 +25,7 @@ function pinned(t) {
 
 function world() {
   const chain = makeChain(ROOT);
-  const ep = { trustCustomEndpoints: true, clients: [client(chain, 'a'), client(chain, 'b')] };
+  const ep = { network: 'testnet', trustCustomEndpoints: true, clients: [client(chain, 'a'), client(chain, 'b')] };
   const anchor = async (env) => (await qt.anchor(env, Object.assign({ seed: SEED, index: 0 }, ep)))[0];
   const owner = qt.generateKey();
   const producer = qt.generateKey();
@@ -106,7 +106,7 @@ test('verification never falls back to the local clock when the chain time fails
   const model = qt.registerModel({ key: owner, name: 'Atlas Vision', model: Buffer.from('weights') });
   const down = { base: 'https://down.example', async nodeInfo() { throw new Error('refused by test'); }, async transaction() { return null; } };
   const down2 = Object.assign({}, down, { base: 'https://down2.example' });
-  const r = await qt.verify(model, { ownerKeyId: qt.keyId(owner), ownerKeyChanges: [], requireAnchor: false, trustCustomEndpoints: true, clients: [down, down2] });
+  const r = await qt.verify(model, { network: 'custom', ownerKeyId: qt.keyId(owner), ownerKeyChanges: [], requireAnchor: false, trustCustomEndpoints: true, clients: [down, down2] });
   assert.strictEqual(r.status, 'indeterminate');
   const c = failed(r, 'chain time');
   assert.ok(c && c.transport);
@@ -120,10 +120,10 @@ test('a fabricated receipt from endpoints that are not pinned operators never ve
   const r = await check(w, output, model, []);
   assert.strictEqual(r.status, 'unproven');
   assert.strictEqual(r.anchoredAt, null);
-  const single = await qt.verify(output, { content: image, model, modelOwnerKeyId: qt.keyId(w.owner), withdrawals: [], ownerKeyChanges: [], trustCustomEndpoints: true, clients: [w.ep.clients[0]], trustSingleEndpoint: true });
+  const single = await qt.verify(output, { content: image, model, modelOwnerKeyId: qt.keyId(w.owner), withdrawals: [], ownerKeyChanges: [], network: 'custom', trustCustomEndpoints: true, clients: [w.ep.clients[0]], trustSingleEndpoint: true });
   assert.notStrictEqual(single.status, 'valid');
   const elsewhere = makeChain(ROOT);
-  const honest = await qt.verify(output, { content: image, model, modelOwnerKeyId: qt.keyId(w.owner), withdrawals: [], ownerKeyChanges: [], trustCustomEndpoints: true, clients: [client(elsewhere, 'c'), client(elsewhere, 'd')] });
+  const honest = await qt.verify(output, { content: image, model, modelOwnerKeyId: qt.keyId(w.owner), withdrawals: [], ownerKeyChanges: [], network: 'custom', trustCustomEndpoints: true, clients: [client(elsewhere, 'c'), client(elsewhere, 'd')] });
   assert.notStrictEqual(honest.status, 'valid');
 });
 
@@ -131,9 +131,10 @@ test('endpoints chosen by the caller need trustCustomEndpoints, loopback needs a
   const w = world();
   const model = await modelOf(w);
   const output = await outputOf(w, model);
-  const opts = { content: image, model, modelOwnerKeyId: qt.keyId(w.owner), withdrawals: [], ownerKeyChanges: [] };
+  const opts = { network: 'testnet', content: image, model, modelOwnerKeyId: qt.keyId(w.owner), withdrawals: [], ownerKeyChanges: [] };
   const untrusted = await qt.verify(output, Object.assign({ clients: w.ep.clients, at: new Date().toISOString() }, opts));
   assert.notStrictEqual(untrusted.status, 'valid');
+  await assert.rejects(qt.verify(output, Object.assign({ clients: w.ep.clients, at: new Date().toISOString() }, opts, { network: 'custom' })), /trustCustomEndpoints/);
   const loop = await qt.verify(output, Object.assign({ trustCustomEndpoints: true, rpc: 'http://127.0.0.1:9', at: new Date().toISOString() }, opts));
   assert.notStrictEqual(loop.status, 'valid');
   const plainResult = await qt.verify(output, Object.assign({}, opts, w.ep));
@@ -143,6 +144,8 @@ test('endpoints chosen by the caller need trustCustomEndpoints, loopback needs a
   assert.strictEqual(wrong.status, 'invalid');
   const right = await qt.verify(output, Object.assign({ expectedSender: w.chain.core.address(SEED, 0) }, opts, w.ep));
   assert.strictEqual(right.status, 'valid', JSON.stringify(right.checks.filter((c) => !c.ok)));
+  const custom = await qt.verify(output, Object.assign({ expectedSender: w.chain.core.address(SEED, 0) }, opts, w.ep, { network: 'custom' }));
+  assert.strictEqual(custom.status, 'valid', JSON.stringify(custom.checks.filter((c) => !c.ok)));
 });
 
 test('an output with sources is indeterminate, never invalid, when only the chain time is unavailable', async (t) => {

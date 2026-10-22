@@ -99,6 +99,7 @@ export interface AnchorOptions {
 
 export interface VerifyOptions {
   type?: 'model' | 'output' | 'keychange';
+  network: 'testnet' | 'custom';
   ownerKeyId?: KeyRef;
   ownerPublicKey?: Uint8Array | string;
   artefact?: Uint8Array;

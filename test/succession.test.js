@@ -25,7 +25,7 @@ function pinned(t) {
 
 function world() {
   const chain = makeChain(ROOT);
-  const ep = { trustCustomEndpoints: true, clients: [client(chain, 'a'), client(chain, 'b')] };
+  const ep = { network: 'testnet', trustCustomEndpoints: true, clients: [client(chain, 'a'), client(chain, 'b')] };
   const anchor = async (env) => (await qt.anchor(env, Object.assign({ seed: SEED, index: 0 }, ep)))[0];
   return { chain, ep, anchor, k1: qt.generateKey(), k2: qt.generateKey(), k3: qt.generateKey(), producer: qt.generateKey() };
 }

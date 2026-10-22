@@ -27,7 +27,7 @@ function records(dir) {
   }
   files.pending = path.join(dir, 'pending.json');
   fs.writeFileSync(files.pending, JSON.stringify({ records: [], kind: '0' }));
-  const tail = ['--allow-unanchored', '--at', iso(now)];
+  const tail = ['--network', 'testnet', '--allow-unanchored', '--at', iso(now)];
   const ownerId = q.keyId(owner);
   return {
     text: { model: JSON.stringify(model), output: JSON.stringify(output), keychange: JSON.stringify(keychange) },

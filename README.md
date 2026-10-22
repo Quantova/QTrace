@@ -113,19 +113,19 @@ qtrace keygen owner2.key
 qtrace key owner2.key > owner2.pub.json
 
 qtrace register-model --key owner.key --name "Atlas Vision" --version 2.1 --model-file weights.safetensors --producer service.pub.json --out model.json
-qtrace anchor model.json --seed-file account.key
+qtrace anchor model.json --network testnet --seed-file account.key
 
 qtrace attest --key service.key --content image.png --media-type image/png --model model.json --input-file prompt.txt --input-salt-out prompt.salt --out image.qtrace.json
-qtrace anchor image.qtrace.json --seed-file account.key
+qtrace anchor image.qtrace.json --network testnet --seed-file account.key
 
-qtrace verify image.qtrace.json --type output --producer service.pub.json --content image.png --model model.json --model-owner owner.pub.json --no-withdrawals --no-owner-key-changes
+qtrace verify image.qtrace.json --type output --network testnet --producer service.pub.json --content image.png --model model.json --model-owner owner.pub.json --no-withdrawals --no-owner-key-changes
 qtrace withdraw --key owner.key --model model.json --producer service.pub.json --out service.withdrawal.json
-qtrace anchor service.withdrawal.json --seed-file account.key
+qtrace anchor service.withdrawal.json --network testnet --seed-file account.key
 qtrace c2pa --action created --source-type trainedAlgorithmicMedia --model model.json > c2pa-actions.json
 
 qtrace rotate-owner-key --key owner.key --successor owner2.pub.json --out owner.rotation.json
-qtrace anchor owner.rotation.json --seed-file account.key
-qtrace verify image.qtrace.json --type output --producer service.pub.json --content image.png --model model.json --model-owner owner.pub.json --no-withdrawals --owner-key-change owner.rotation.json
+qtrace anchor owner.rotation.json --network testnet --seed-file account.key
+qtrace verify image.qtrace.json --type output --network testnet --producer service.pub.json --content image.png --model model.json --model-owner owner.pub.json --no-withdrawals --owner-key-change owner.rotation.json
 ```
 
 Content and model files are hashed as they are read, so files up to 64 GiB are supported and never leave the machine, and symbolic links such as model caches are followed for these public files. The prompt salt is written in its own qtrace-salt/1 format to a new file readable only by its owner and is never replaced, and no output may share a path with any input or with another output. Models, outputs and withdrawals are anchored in separate batches. If an anchor is interrupted after its transaction was sent, the pending stamp is saved beside the first envelope and the complete command finishes it without paying again. The command exits with status 0 when the result is valid, 1 when it is invalid, refused or the evidence is malformed, 2 when it cannot be decided or rests on an unproven anchor, and 64 for usage errors, including a path that cannot be opened. Key and salt files must be readable only by their owner and are never followed through symbolic links.
@@ -142,7 +142,7 @@ const output = qtrace.attest({ key: serviceKey, content: imageBytes, mediaType: 
 
 const [anchored] = await qtrace.anchor(output, { seed: accountSeed, index: 0, network: 'testnet' });
 
-const result = await qtrace.verify(anchored, { producerKeyId, content: imageBytes, model: anchoredModel, modelOwnerKeyId, withdrawals: [], ownerKeyChanges: [] });
+const result = await qtrace.verify(anchored, { network: 'testnet', producerKeyId, content: imageBytes, model: anchoredModel, modelOwnerKeyId, withdrawals: [], ownerKeyChanges: [] });
 
 const revocation = qtrace.revokeOwnerKey({ key: ownerKey, note: 'key retired' });
 ```
@@ -158,7 +158,7 @@ const revocation = qtrace.revokeOwnerKey({ key: ownerKey, note: 'key retired' })
 
 ## Network
 
-The live Quantova network is named Q-test-net-01. Its genesis hash and the official Qstamp contract that records anchors are pinned in the Qstamp release this SDK depends on. The public endpoint is https://q-test-net-01.quantova.org. By default verification consults the official endpoints of the network. Endpoints chosen by the verifier are given with the rpc or clients option, or with --rpc once for each on the command line, and verification consults them only with trustCustomEndpoints, or --trust-custom-endpoints. An endpoint on a loopback address is refused unless allowLoopback, or --allow-loopback, is set, and an endpoint on a private network address unless it is named in endpointAllowList, or with --allow-endpoint. The option expectedSender, or --expect-sender, names the Quantova accounts entitled to anchor records, and an anchor signed by any other account is invalid. Anchoring accepts chain data only when at least two endpoints run by different operators agree, and the option trustSingleEndpoint, or --trust-single-endpoint, relies on one endpoint for anchoring and for the time of the chain.
+The live Quantova network is named Q-test-net-01. Its genesis hash and the official Qstamp contract that records anchors are pinned in the Qstamp release this SDK depends on. The public endpoint is https://q-test-net-01.quantova.org. By default verification consults the official endpoints of the network. Every verification names the network its envelopes were anchored on with the network option, or --network on the command line, testnet for the public network or custom for a chain reached only through endpoints the verifier chose, and an anchor recorded on any other network fails. Endpoints chosen by the verifier are given with the rpc or clients option, or with --rpc once for each on the command line, and verification consults them only with trustCustomEndpoints, or --trust-custom-endpoints. An endpoint on a loopback address is refused unless allowLoopback, or --allow-loopback, is set, and an endpoint on a private network address unless it is named in endpointAllowList, or with --allow-endpoint. The option expectedSender, or --expect-sender, names the Quantova accounts entitled to anchor records, and an anchor signed by any other account is invalid. Anchoring accepts chain data only when at least two endpoints run by different operators agree, and the option trustSingleEndpoint, or --trust-single-endpoint, relies on one endpoint for anchoring and for the time of the chain.
 
 ## Licence
 
