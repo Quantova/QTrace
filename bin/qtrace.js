@@ -13,19 +13,20 @@ const qstamp = require('@quantovainc/qstamp');
 const ENVELOPE_MAX = 1024 * 1024;
 const KEY_JSON_MAX = 64 * 1024;
 const FILE_MAX = 64 * 1024 * 1024 * 1024;
+const NOTE_FILE_MAX = 64 * 1024;
 
 const HELP = `qtrace, post quantum content provenance for AI with Quantova time proofs
 
   qtrace keygen <keyfile>
   qtrace key <keyfile>
   qtrace register-model --key <owner keyfile> --name TEXT [--version TEXT] (--model-file FILE | --model-digest HEX)
-                        [--card-file FILE | --card-digest HEX] [--producer KEY]... [--note TEXT] --out FILE
-  qtrace withdraw --key <owner keyfile> --model FILE --producer KEY [--note TEXT] --out FILE
-  qtrace revoke-owner-key --key <owner keyfile> [--note TEXT] --out FILE
-  qtrace rotate-owner-key --key <owner keyfile> --successor KEY [--note TEXT] --out FILE
+                        [--card-file FILE | --card-digest HEX] [--producer KEY]... [--note-file FILE] --out FILE
+  qtrace withdraw --key <owner keyfile> --model FILE --producer KEY [--note-file FILE] --out FILE
+  qtrace revoke-owner-key --key <owner keyfile> [--note-file FILE] --out FILE
+  qtrace rotate-owner-key --key <owner keyfile> --successor KEY [--note-file FILE] --out FILE
   qtrace attest --key <producer keyfile> (--content FILE | --content-digest HEX --content-size N) --media-type TYPE
                 [--action ACTION] [--source-type TYPE] [--model FILE] [--input-file FILE --input-salt-out FILE]
-                [--ingredient FILE]... [--c2pa-file FILE] [--note TEXT] --out FILE
+                [--ingredient FILE]... [--c2pa-file FILE] [--note-file FILE] --out FILE
   qtrace anchor <envelope>... --network NAME --seed-file <file> [--index N] [--rpc URL]... [--trust-single-endpoint] [--allow-endpoint HOST]... [--allow-loopback] [--max-fee N]
   qtrace complete <envelope>... --pending FILE [--tx ID] [--rpc URL]... [--trust-single-endpoint] [--allow-endpoint HOST]...
                 [--allow-loopback]
@@ -38,7 +39,9 @@ const HELP = `qtrace, post quantum content provenance for AI with Quantova time 
   qtrace c2pa (<output envelope> | --action ACTION --source-type TYPE [--when TIME]) [--model FILE]
 
 A KEY is a 64 hex character key id or a qtrace-key/1 file written by the key command. Content and model files
-are hashed with SHA3-256 as they are read and never leave this machine. Models and outputs are anchored in
+are hashed with SHA3-256 as they are read and never leave this machine. A note is read from the file named by
+--note-file, or from standard input when the file is -, so it never appears in the shell history or the process
+list. Models and outputs are anchored in
 separate batches, and a model owner withdraws a producer with a withdrawal anchored in its own batch. If an
 anchor is interrupted after its transaction was sent, the pending stamp is kept beside the first envelope and
 complete finishes it. A model owner revokes its key, or rotates it to a successor key, with an owner key change
@@ -78,11 +81,11 @@ function endpointOptions(flags) {
 const SPEC = {
   keygen: { flags: ['force'], values: [] },
   key: { flags: [], values: [] },
-  'register-model': { flags: ['force'], values: ['key', 'name', 'version', 'model-file', 'model-digest', 'card-file', 'card-digest', 'note', 'out'], multi: ['producer'] },
-  withdraw: { flags: ['force'], values: ['key', 'model', 'producer', 'note', 'out'] },
-  'revoke-owner-key': { flags: ['force'], values: ['key', 'note', 'out'] },
-  'rotate-owner-key': { flags: ['force'], values: ['key', 'successor', 'note', 'out'] },
-  attest: { flags: ['force'], values: ['key', 'content', 'content-digest', 'content-size', 'media-type', 'action', 'source-type', 'model', 'input-file', 'input-salt-out', 'c2pa-file', 'note', 'out'], multi: ['ingredient'] },
+  'register-model': { flags: ['force'], values: ['key', 'name', 'version', 'model-file', 'model-digest', 'card-file', 'card-digest', 'note', 'note-file', 'out'], multi: ['producer'] },
+  withdraw: { flags: ['force'], values: ['key', 'model', 'producer', 'note', 'note-file', 'out'] },
+  'revoke-owner-key': { flags: ['force'], values: ['key', 'note', 'note-file', 'out'] },
+  'rotate-owner-key': { flags: ['force'], values: ['key', 'successor', 'note', 'note-file', 'out'] },
+  attest: { flags: ['force'], values: ['key', 'content', 'content-digest', 'content-size', 'media-type', 'action', 'source-type', 'model', 'input-file', 'input-salt-out', 'c2pa-file', 'note', 'note-file', 'out'], multi: ['ingredient'] },
   anchor: { flags: ['trust-single-endpoint', 'allow-loopback'], values: ['seed-file', 'index', 'max-fee', 'network'], multi: ['rpc', 'allow-endpoint'] },
   complete: { flags: ['trust-single-endpoint', 'allow-loopback'], values: ['pending', 'tx'], multi: ['rpc', 'allow-endpoint'] },
   verify: { flags: ['allow-unanchored', 'no-withdrawals', 'no-owner-key-changes', 'json', 'trust-single-endpoint', 'trust-custom-endpoints', 'allow-loopback'], values: ['type', 'producer', 'owner', 'content', 'content-digest', 'model', 'model-owner', 'input-file', 'input-salt-file', 'c2pa-file', 'artefact', 'at', 'max-anchor-delay', 'network'], multi: ['ingredient', 'withdrawal', 'owner-key-change', 'rpc', 'allow-endpoint', 'expect-sender'] },
@@ -624,6 +627,28 @@ function keyRef(value, name) {
   return desc;
 }
 
+function noteOf(flags) {
+  if (flags.note !== undefined) throw usageError('--note is no longer taken on the command line, where it shows in the shell history and the process list, give --note-file FILE, or --note-file - to read it from standard input');
+  const file = flags['note-file'];
+  if (file === undefined) return undefined;
+  let raw;
+  if (file === '-') {
+    try {
+      raw = fs.readFileSync(0);
+    } catch (e) {
+      throw usageError('--note-file - could not read standard input');
+    }
+    if (raw.length > NOTE_FILE_MAX) throw usageError('--note-file holds more than ' + NOTE_FILE_MAX + ' bytes');
+  } else {
+    raw = readSmall(file, 'note file', NOTE_FILE_MAX);
+  }
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(raw).replace(/\r?\n$/, '');
+  } catch (e) {
+    throw usageError('--note-file must hold UTF-8 text');
+  }
+}
+
 function sizeFlag(value) {
   if (!/^\d{1,15}$/.test(value)) throw usageError('--content-size is a whole number of bytes');
   return Number(value);
@@ -640,7 +665,7 @@ async function cmdRegisterModel(positional, flags) {
   if (flags['card-file'] !== undefined && flags['card-digest'] !== undefined) throw usageError('give --card-file or --card-digest, not both');
   checkPaths([['--out', out, !!flags.force]], [['--key', flags.key], ['--model-file', flags['model-file']], ['--card-file', flags['card-file']]]
     .concat(capList(flags.producer, 'producer', LIST_MAX).filter((v) => !/^[0-9a-f]{64}$/.test(v)).map((f) => ['--producer', f])));
-  const opts = { name: need(flags, 'name'), version: flags.version, note: flags.note };
+  const opts = { name: need(flags, 'name'), version: flags.version, note: noteOf(flags) };
   opts.producers = capList(flags.producer, 'producer', LIST_MAX).map((p) => keyRef(p, 'producer'));
   opts.modelDigest = flags['model-digest'] !== undefined ? hexFlag(flags['model-digest'], 'model-digest') : (await hashFile(flags['model-file'], 'model file')).digest;
   if (flags['card-digest'] !== undefined) opts.cardDigest = hexFlag(flags['card-digest'], 'card-digest');
@@ -657,7 +682,8 @@ async function cmdWithdraw(positional, flags) {
   const producer = need(flags, 'producer');
   checkPaths([['--out', out, !!flags.force]], [['--key', flags.key], ['--model', flags.model]].concat(/^[0-9a-f]{64}$/.test(producer) ? [] : [['--producer', producer]]));
   const model = readJson(need(flags, 'model'), 'model', true);
-  const env = withSeed(need(flags, 'key'), '--key', (seed) => qt.withdrawProducer({ key: seed, model, producer: keyRef(producer, 'producer'), note: flags.note }));
+  const note = noteOf(flags);
+  const env = withSeed(need(flags, 'key'), '--key', (seed) => qt.withdrawProducer({ key: seed, model, producer: keyRef(producer, 'producer'), note }));
   writeEnvelope(out, env, flags.force);
   console.log('producer ' + env.statement.producerKeyId + ' withdrawn from model ' + env.statement.modelId + ', written to ' + safe(out));
   return 0;
@@ -668,9 +694,10 @@ async function cmdOwnerKey(positional, flags, rotate) {
   const out = need(flags, 'out');
   const successor = rotate ? need(flags, 'successor') : undefined;
   checkPaths([['--out', out, !!flags.force]], [['--key', flags.key]].concat(successor === undefined || /^[0-9a-f]{64}$/.test(successor) ? [] : [['--successor', successor]]));
+  const note = noteOf(flags);
   const env = withSeed(need(flags, 'key'), '--key', (seed) => (rotate
-    ? qt.rotateOwnerKey({ key: seed, successor: keyRef(successor, 'successor'), note: flags.note })
-    : qt.revokeOwnerKey({ key: seed, note: flags.note })));
+    ? qt.rotateOwnerKey({ key: seed, successor: keyRef(successor, 'successor'), note })
+    : qt.revokeOwnerKey({ key: seed, note })));
   writeEnvelope(out, env, flags.force);
   console.log('owner key ' + env.statement.ownerKeyId + (rotate ? ' handed over to ' + env.statement.successorKeyId : ' revoked') + ', anchor it at once, written to ' + safe(out));
   return 0;
@@ -684,7 +711,7 @@ async function cmdAttest(positional, flags) {
   const ing = capList(flags.ingredient, 'ingredient', LIST_MAX);
   checkPaths([['--input-salt-out', flags['input-salt-out'], false], ['--out', out, !!flags.force]],
     [['--key', flags.key], ['--content', flags.content], ['--model', flags.model], ['--input-file', flags['input-file']], ['--c2pa-file', flags['c2pa-file']]].concat(ing.map((f) => ['--ingredient', f])));
-  const opts = { mediaType: need(flags, 'media-type'), note: flags.note };
+  const opts = { mediaType: need(flags, 'media-type'), note: noteOf(flags) };
   if (flags.action !== undefined) opts.action = flags.action;
   if (flags['source-type'] !== undefined) opts.sourceType = flags['source-type'];
   if (flags.content !== undefined) {
