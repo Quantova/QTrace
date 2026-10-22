@@ -118,14 +118,14 @@ qtrace anchor model.json --seed-file account.key
 qtrace attest --key service.key --content image.png --media-type image/png --model model.json --input-file prompt.txt --input-salt-out prompt.salt --out image.qtrace.json
 qtrace anchor image.qtrace.json --seed-file account.key
 
-qtrace verify image.qtrace.json --producer service.pub.json --content image.png --model model.json --model-owner owner.pub.json --no-withdrawals --no-owner-key-changes
+qtrace verify image.qtrace.json --type output --producer service.pub.json --content image.png --model model.json --model-owner owner.pub.json --no-withdrawals --no-owner-key-changes
 qtrace withdraw --key owner.key --model model.json --producer service.pub.json --out service.withdrawal.json
 qtrace anchor service.withdrawal.json --seed-file account.key
 qtrace c2pa --action created --source-type trainedAlgorithmicMedia --model model.json > c2pa-actions.json
 
 qtrace rotate-owner-key --key owner.key --successor owner2.pub.json --out owner.rotation.json
 qtrace anchor owner.rotation.json --seed-file account.key
-qtrace verify image.qtrace.json --producer service.pub.json --content image.png --model model.json --model-owner owner.pub.json --no-withdrawals --owner-key-change owner.rotation.json
+qtrace verify image.qtrace.json --type output --producer service.pub.json --content image.png --model model.json --model-owner owner.pub.json --no-withdrawals --owner-key-change owner.rotation.json
 ```
 
 Content and model files are hashed as they are read, so files up to 64 GiB are supported and never leave the machine, and symbolic links such as model caches are followed for these public files. The prompt salt is written in its own qtrace-salt/1 format to a new file readable only by its owner and is never replaced, and no output may share a path with any input or with another output. Models, outputs and withdrawals are anchored in separate batches. If an anchor is interrupted after its transaction was sent, the pending stamp is saved beside the first envelope and the complete command finishes it without paying again. The command exits with status 0 when the result is valid, 1 when it is invalid, refused or the evidence is malformed, 2 when it cannot be decided or rests on an unproven anchor, and 64 for usage errors, including a path that cannot be opened. Key and salt files must be readable only by their owner and are never followed through symbolic links.

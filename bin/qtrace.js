@@ -28,7 +28,7 @@ const HELP = `qtrace, post quantum content provenance for AI with Quantova time 
   qtrace anchor <envelope>... --seed-file <file> [--index N] [--rpc URL]... [--trust-single-endpoint] [--allow-endpoint HOST]... [--allow-loopback] [--max-fee N]
   qtrace complete <envelope>... --pending FILE [--tx ID] [--rpc URL]... [--trust-single-endpoint] [--allow-endpoint HOST]...
                 [--allow-loopback]
-  qtrace verify <envelope> (--producer KEY | --owner KEY) [--content FILE | --content-digest HEX]
+  qtrace verify <envelope> --type (model | output | keychange) (--producer KEY | --owner KEY) [--content FILE | --content-digest HEX]
                 [--model FILE --model-owner KEY] [--input-file FILE --input-salt-file FILE] [--c2pa-file FILE]
                 [--ingredient FILE]... [--withdrawal FILE... | --no-withdrawals]
                 [--owner-key-change FILE... | --no-owner-key-changes] [--artefact FILE] [--allow-unanchored]
@@ -75,7 +75,7 @@ const SPEC = {
   attest: { flags: ['force'], values: ['key', 'content', 'content-digest', 'content-size', 'media-type', 'action', 'source-type', 'model', 'input-file', 'input-salt-out', 'c2pa-file', 'note', 'out'], multi: ['ingredient'] },
   anchor: { flags: ['trust-single-endpoint', 'allow-loopback'], values: ['seed-file', 'index', 'max-fee'], multi: ['rpc', 'allow-endpoint'] },
   complete: { flags: ['trust-single-endpoint', 'allow-loopback'], values: ['pending', 'tx'], multi: ['rpc', 'allow-endpoint'] },
-  verify: { flags: ['allow-unanchored', 'no-withdrawals', 'no-owner-key-changes', 'json', 'trust-single-endpoint', 'trust-custom-endpoints', 'allow-loopback'], values: ['producer', 'owner', 'content', 'content-digest', 'model', 'model-owner', 'input-file', 'input-salt-file', 'c2pa-file', 'artefact', 'at', 'max-anchor-delay'], multi: ['ingredient', 'withdrawal', 'owner-key-change', 'rpc', 'allow-endpoint', 'expect-sender'] },
+  verify: { flags: ['allow-unanchored', 'no-withdrawals', 'no-owner-key-changes', 'json', 'trust-single-endpoint', 'trust-custom-endpoints', 'allow-loopback'], values: ['type', 'producer', 'owner', 'content', 'content-digest', 'model', 'model-owner', 'input-file', 'input-salt-file', 'c2pa-file', 'artefact', 'at', 'max-anchor-delay'], multi: ['ingredient', 'withdrawal', 'owner-key-change', 'rpc', 'allow-endpoint', 'expect-sender'] },
   c2pa: { flags: [], values: ['model', 'action', 'source-type', 'when'] },
 };
 
@@ -721,8 +721,9 @@ async function cmdAttest(positional, flags) {
 async function cmdVerify(positional, flags) {
   if (positional.length !== 1) throw usageError('verify takes one envelope');
   const env = readJson(positional[0], 'envelope', true);
-  const opts = { requireAnchor: !flags['allow-unanchored'] };
-  const type = env && typeof env === 'object' ? env.type : undefined;
+  const type = need(flags, 'type');
+  if (!['model', 'output', 'keychange'].includes(type)) throw usageError('--type is model, output or keychange, the kind of record you expect to verify');
+  const opts = { type, requireAnchor: !flags['allow-unanchored'] };
   const OUTPUT_ONLY = ['producer', 'content', 'content-digest', 'model', 'model-owner', 'input-file', 'input-salt-file', 'c2pa-file', 'ingredient', 'withdrawal', 'no-withdrawals'];
   if (flags['no-owner-key-changes'] && flags['owner-key-change']) throw usageError('give --owner-key-change files or --no-owner-key-changes, not both');
   if (flags['owner-key-change']) opts.ownerKeyChanges = capList(flags['owner-key-change'], 'owner-key-change', 256).map((f) => readJson(f, 'owner key change', true));
@@ -731,7 +732,6 @@ async function cmdVerify(positional, flags) {
   if (type === 'keychange') {
     const stray = OUTPUT_ONLY.concat(['artefact']).filter((k) => flags[k] !== undefined);
     if (stray.length) throw usageError('an owner key change is checked against --owner only');
-    opts.type = 'keychange';
     opts.ownerKeyId = keyRef(need(flags, 'owner'), 'owner');
   } else if (type === 'model') {
     const stray = OUTPUT_ONLY.filter((k) => flags[k] !== undefined);

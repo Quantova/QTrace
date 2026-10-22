@@ -32,9 +32,9 @@ function records(dir) {
   return {
     text: { model: JSON.stringify(model), output: JSON.stringify(output), keychange: JSON.stringify(keychange) },
     files,
-    verifyModel: (file) => ['verify', file, '--owner', ownerId, '--no-owner-key-changes'].concat(tail),
-    verifyOutput: (file, modelFile) => ['verify', file, '--producer', q.keyId(producer), '--content-digest', F.sha3(image).toString('hex'), '--model', modelFile, '--model-owner', ownerId, '--no-withdrawals', '--no-owner-key-changes'].concat(tail),
-    verifyChange: (file) => ['verify', file, '--owner', ownerId].concat(tail),
+    verifyModel: (file) => ['verify', file, '--type', 'model', '--owner', ownerId, '--no-owner-key-changes'].concat(tail),
+    verifyOutput: (file, modelFile) => ['verify', file, '--type', 'output', '--producer', q.keyId(producer), '--content-digest', F.sha3(image).toString('hex'), '--model', modelFile, '--model-owner', ownerId, '--no-withdrawals', '--no-owner-key-changes'].concat(tail),
+    verifyChange: (file) => ['verify', file, '--type', 'keychange', '--owner', ownerId].concat(tail),
   };
 }
 
