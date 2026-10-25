@@ -190,3 +190,30 @@ test('options are read only from the object given and never from Object.prototyp
     for (const k of Object.keys(polluted)) delete Object.prototype[k];
   }
 });
+
+test('a key change signed by a key that was already rotated or revoked never verifies valid', async (t) => {
+  pinned(t);
+  const w = world();
+  const successor = qt.generateKey();
+  const rotation = await w.anchor(qt.rotateOwnerKey({ key: w.owner, successor: qt.describeKey(successor) }));
+  w.chain.newBlock();
+  const thief = await w.anchor(qt.rotateOwnerKey({ key: w.owner, successor: qt.describeKey(qt.generateKey()) }));
+  const opts = (list) => Object.assign({ type: 'keychange', ownerKeyId: qt.keyId(w.owner), ownerKeyChanges: list }, w.ep);
+  for (const list of [[rotation], [rotation, thief], [thief, rotation]]) {
+    const r = await qt.verify(thief, opts(list));
+    assert.strictEqual(r.status, 'invalid', JSON.stringify(r.checks.filter((c) => !c.ok)));
+    assert.ok(failed(r, 'earlier key change'));
+  }
+  const omitted = await qt.verify(thief, opts(undefined));
+  assert.strictEqual(omitted.status, 'indeterminate');
+  assert.ok(failed(omitted, 'earlier key change'));
+  const first = await qt.verify(rotation, opts([rotation, thief]));
+  assert.strictEqual(first.status, 'valid', JSON.stringify(first.checks.filter((c) => !c.ok)));
+  w.chain.newBlock();
+  const revoked = qt.generateKey();
+  const revocation = await w.anchor(qt.revokeOwnerKey({ key: revoked }));
+  w.chain.newBlock();
+  const late = await w.anchor(qt.rotateOwnerKey({ key: revoked, successor: qt.describeKey(qt.generateKey()) }));
+  const r = await qt.verify(late, Object.assign({ type: 'keychange', ownerKeyId: qt.keyId(revoked), ownerKeyChanges: [revocation] }, w.ep));
+  assert.strictEqual(r.status, 'invalid');
+});

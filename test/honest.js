@@ -42,7 +42,7 @@ async function honest() {
   const options = {
     model: Object.assign({ type: 'model', ownerKeyId: q.keyId(K.owner), ownerKeyChanges: [keychange], artefact: weights }, common),
     output: Object.assign({ type: 'output', content: image, model, producerKeyId: q.keyId(K.producer), modelOwnerKeyId: q.keyId(K.owner), withdrawals: [withdrawal], ownerKeyChanges: [keychange] }, common),
-    keychange: Object.assign({ type: 'keychange', ownerKeyId: q.keyId(K.owner) }, common),
+    keychange: Object.assign({ type: 'keychange', ownerKeyId: q.keyId(K.owner), ownerKeyChanges: [] }, common),
   };
   return { q, w, now, K, weights, image, options, all: { model, output, withdrawal, keychange } };
 }
