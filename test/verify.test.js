@@ -217,3 +217,23 @@ test('a key change signed by a key that was already rotated or revoked never ver
   const r = await qt.verify(late, Object.assign({ type: 'keychange', ownerKeyId: qt.keyId(revoked), ownerKeyChanges: [revocation] }, w.ep));
   assert.strictEqual(r.status, 'invalid');
 });
+
+test('the verify pass shares a time limit so no anchor is checked once it is reached', async () => {
+  const origIsProven = qstamp.isProven;
+  const origVerify = qstamp.verify;
+  const origNow = performance.now.bind(performance);
+  const { honest } = require('./honest');
+  const h = await honest();
+  let tick = 0;
+  let count = 0;
+  performance.now = () => { tick += 1; return tick; };
+  qstamp.verify = async (...args) => { count += 1; return origVerify(...args); };
+  try {
+    await qt.verify(h.all.output, Object.assign({}, h.options.output, { deadlineMs: 1 }));
+  } finally {
+    qstamp.verify = origVerify;
+    qstamp.isProven = origIsProven;
+    performance.now = origNow;
+  }
+  assert.strictEqual(count, 0, 'no anchor was verified after the shared time limit, saw ' + count);
+});
